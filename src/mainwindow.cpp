@@ -141,7 +141,8 @@ void MainWindow::on_actionAbout_triggered()
     msgBox.setWindowTitle(tr("About"));
     msgBox.setMinimumSize(QSize(400, 200));
     msgBox.setTextFormat(Qt::RichText);
-    msgBox.setText(tr("Author: X Pan<br/>API powered by <a href='https://github.com/Henryhaohao/Bilibili_video_download'>Henryhaohao</a>"));
+    msgBox.setText(tr("Author: <a href='https://github.com/pansynchronize'>X Pan</a><br/>\
+                        API powered by <a href='https://github.com/Henryhaohao/Bilibili_video_download'>Henryhaohao</a>"));
     msgBox.exec();
 }
 
