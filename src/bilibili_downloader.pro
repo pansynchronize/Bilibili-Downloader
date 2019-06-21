@@ -30,7 +30,8 @@ SOURCES += \
         main.cpp \
         mainwindow.cpp \
         previewwidget.cpp \
-        sourcechooser.cpp
+        sourcechooser.cpp \
+        vaconverter.cpp
 
 HEADERS += \
         biprogressbar.h \
@@ -38,11 +39,13 @@ HEADERS += \
         bsettings.h \
         mainwindow.h \
         previewwidget.h \
-        sourcechooser.h
+        sourcechooser.h \
+        vaconverter.h
 
 FORMS += \
         bsettings.ui \
-        mainwindow.ui
+        mainwindow.ui \
+        vaconverter.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

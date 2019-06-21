@@ -29,12 +29,20 @@ MainWindow::MainWindow(QWidget *parent) :
             QDesktopServices::openUrl(dir);
         }
     });
-    connect(downloader, &Downloader::dataUpdated, this, [=](const QMap<QString, QString>& datalist){
-       this->showData(datalist);
+    connect(downloader, &Downloader::dataUpdated, this, [this](const QMap<QString,QMap<QString, QString>>& datalist, QStringList pgs){
+        ui->comboBox->setEnabled(true);
+        ui->comboBox->clear();
+        ui->comboBox->addItems(std::move(pgs));
+        numofpages = ui->comboBox->count();
+        alldata.clear();
+        alldata = datalist;
+//        qDebug() << datalist << endl;
+        this->showData(alldata["page 1"], true);
     });
     connect(downloader, &Downloader::urlUpdated, this, [=](const QMap<QString, QStringList>& urllist){
        this->urllist = urllist;
        ui->pushButton->setEnabled(true);
+       ui->comboBox->setEnabled(true);
     });
     connect(downloader, &Downloader::downloaded, this, [this](const QString& dstpath, const QString& basefilename){
         if(this->numVideos == 0){
@@ -44,7 +52,7 @@ MainWindow::MainWindow(QWidget *parent) :
             QProcess *p = new QProcess(this);
 //            qDebug() << videos.length() << endl;
             if(videos.length() == 1){
-                QString command = QString("ffmpeg -i \""+dstpath+"/"+videos[0]+"\" -codec copy \""+dstpath+"/"+basefilename+".mp4\"");
+                QString command = QString("ffmpeg -i \""+dstpath+"/"+videos[0]+"\" -codec copy \""+dstpath+"/"+basefilename+".mp4\" -y");
                 qDebug() << command << endl;
                 p->start(command);
                 connect(p, static_cast<void(QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished), this, [=](int exitcode){
@@ -68,7 +76,7 @@ MainWindow::MainWindow(QWidget *parent) :
                     file.write(QString("file "+dstpath+"/"+video+"\n").toUtf8());
                 }
                 file.close();
-                p->start("ffmpeg -f concat -safe 0 -i "+dstpath+"/.mylist.txt -c copy \""+dstpath+"/"+basefilename+".mp4\"");
+                p->start("ffmpeg -f concat -safe 0 -i "+dstpath+"/.mylist.txt -c copy \""+dstpath+"/"+basefilename+".mp4\" -y");
                 connect(p, static_cast<void(QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished), this, [=](int exitcode){
                     qDebug() << p->readAllStandardError() << endl;
                     if(exitcode == 0){
@@ -87,6 +95,7 @@ MainWindow::MainWindow(QWidget *parent) :
             ui->pushButton->setEnabled(true);
             ui->pushButton->setText(tr("Download"));
             ui->lineEdit->setEnabled(true);
+            ui->comboBox->setEnabled(true);
             ui->statusBar->showMessage("");
         }
     });
@@ -98,7 +107,7 @@ MainWindow::~MainWindow()
     delete downloader;
 }
 
-void MainWindow::showData(const QMap<QString, QString>& datalist)
+void MainWindow::showData(const QMap<QString, QString>& datalist, bool imgrequest)
 {
     //set data to GUI
     ui->lineEdit_2->setText(datalist["title"]);
@@ -108,26 +117,24 @@ void MainWindow::showData(const QMap<QString, QString>& datalist)
     ui->lineEdit_6->setText(datalist["likes"]);
     ui->lineEdit_7->setText(datalist["favourites"]);
     ui->lineEdit_8->setText(datalist["coins"]);
-    QNetworkAccessManager* picmanager = new QNetworkAccessManager();
-    QNetworkRequest picrequest;
-    picrequest.setUrl(datalist["pic"]);
-    picmanager->get(picrequest);
-    connect(picmanager, &QNetworkAccessManager::finished, this, [this](QNetworkReply* reply){
-       QByteArray ba = reply->readAll();
-       QImage img;
-       if(pixmap == nullptr){
-           pixmap = new QPixmap;
-       }
-       img = QImage::fromData(ba);
-//           QFile out("tawny_out.jpg");
-//           if (out.open(QIODevice::WriteOnly)) {
-//               QTextStream s(&out);
-//               s << ba;
-//               out.close();
-//           }
-       *pixmap = QPixmap::fromImage(img);
-       ui->label_2->setPixmap(pixmap->scaled(ui->label_2->size(), Qt::AspectRatioMode::KeepAspectRatio));
-    });
+    ui->lineEdit_9->setText(datalist["part"]);
+    if(imgrequest){
+        QNetworkAccessManager* picmanager = new QNetworkAccessManager();
+        QNetworkRequest picrequest;
+        picrequest.setUrl(datalist["pic"]);
+        picmanager->get(picrequest);
+        connect(picmanager, &QNetworkAccessManager::finished, this, [this, picmanager](QNetworkReply* reply){
+            QByteArray ba = reply->readAll();
+            QImage img;
+            if(pixmap == nullptr){
+               pixmap = new QPixmap;
+            }
+            img = QImage::fromData(ba);
+            *pixmap = QPixmap::fromImage(img);
+            ui->label_2->setPixmap(pixmap->scaled(ui->label_2->size(), Qt::AspectRatioMode::KeepAspectRatio));
+            picmanager->deleteLater();
+        });
+    }
 }
 
 void MainWindow::on_actionClose_triggered()
@@ -189,14 +196,13 @@ void Downloader::getPlayList(QString start_url, QString cid, QString quality)
     });
 }
 
-void Downloader::getPlayLists(const QString &start_url, const QString &cid)
+void Downloader::getPlayLists(const QString &cid)
 {
     connect(this, &Downloader::urlAdded, this, &Downloader::urlChecker);
     getPlayList(start_url, cid, "16");
     getPlayList(start_url, cid, "32");
     getPlayList(start_url, cid, "64");
     getPlayList(start_url, cid, "80");
-
 }
 
 void Downloader::getMetaData(QString baseurl)
@@ -229,47 +235,62 @@ void Downloader::getMetaData(QString baseurl)
         dataManager->get(request);
         connect(dataManager, &QNetworkAccessManager::finished, this, [=](QNetworkReply* reply){
            saveData(reply->readAll());
-           emit dataUpdated(this->datalist);
-           getPlayLists(url, datalist["cid"]);
+//           qDebug() << this->datalist << endl;
+           emit dataUpdated(this->datalist, allpages);
+           getPlayLists(datalist["page 1"]["cid"]);
         });
     }
 }
 
-void Downloader::saveData(QString aid, QString cid, QString title, QString pic, QString author, QString duration, QString likes, QString favourites, QString coins, QString views)
+void Downloader::saveData(QString pg, QString aid, QString cid, QString title, QString part,
+                          QString pic, QString author, QString duration,
+                          QString likes, QString favourites,
+                          QString coins, QString views)
 {
-    datalist.clear();
-    datalist.insert("aid", aid);
-    datalist.insert("cid", cid);
-    datalist.insert("title", title);
-    datalist.insert("pic", pic);
-    datalist.insert("author", author);
-    datalist.insert("duration", duration);
-    datalist.insert("likes", likes);
-    datalist.insert("favourites", favourites);
-    datalist.insert("coins", coins);
-    datalist.insert("views", views);
+    QMap<QString, QString> data;
+    data.insert("aid", aid);
+    data.insert("cid", cid);
+    data.insert("title", title);
+    data.insert("part", part);
+    data.insert("pic", pic);
+    data.insert("author", author);
+    data.insert("duration", duration);
+    data.insert("likes", likes);
+    data.insert("favourites", favourites);
+    data.insert("coins", coins);
+    data.insert("views", views);
+    datalist.insert(pg, data);
 }
 
 void Downloader::saveData(const QByteArray &ba)
 {
     jd = QJsonDocument::fromJson(ba);
     QJsonObject jsobj = jd.object()["data"].toObject();
-    QString aid, cid, title, pic, author, duration, likes, favourites, coins, views;
+    QString aid, cid, title, part, pic, author, duration, likes, favourites, coins, views, pg;
     //get data from json
-    aid = QString::number(jsobj["aid"].toInt());
-    cid = QString::number(jsobj["cid"].toInt());
-    duration = QString::number(jsobj["duration"].toInt());
-    author = jsobj["owner"].toObject()["name"].toString();
-    title = jsobj["title"].toString();
-    likes = QString::number(jsobj["stat"].toObject()["like"].toInt());
-    favourites = QString::number(jsobj["stat"].toObject()["favorite"].toInt());
-    coins = QString::number(jsobj["stat"].toObject()["coin"].toInt());
-    views = QString::number(jsobj["stat"].toObject()["view"].toInt());
-    pic = jsobj["pic"].toString();
-    saveData(aid, cid, title, pic, author, duration, likes,favourites, coins, views);
+    QJsonArray pages = jsobj["pages"].toArray();
+    allpages.clear();
+    datalist.clear();
+    for(auto page = pages.begin(); page!=pages.end(); page++){
+        QJsonObject pgobj = page->toObject();
+        aid = QString::number(jsobj["aid"].toInt());
+        cid = QString::number(pgobj["cid"].toInt());
+        pg = "page "+QString::number(pgobj["page"].toInt());
+        allpages.append(pg);
+        duration = QString::number(pgobj["duration"].toInt());
+        title = jsobj["title"].toString();
+        part = pgobj["part"].toString();
+        author = jsobj["owner"].toObject()["name"].toString();
+        likes = QString::number(jsobj["stat"].toObject()["like"].toInt());
+        favourites = QString::number(jsobj["stat"].toObject()["favorite"].toInt());
+        coins = QString::number(jsobj["stat"].toObject()["coin"].toInt());
+        views = QString::number(jsobj["stat"].toObject()["view"].toInt());
+        pic = jsobj["pic"].toString();
+        saveData(pg, aid, cid, title, part, pic, author, duration, likes,favourites, coins, views);
+    }
 }
 
-QMap<QString, QString> Downloader::getData() const
+QMap<QString, QMap<QString, QString>> Downloader::getData() const
 {
     return datalist;
 }
@@ -279,9 +300,9 @@ QMap<QString, QStringList> Downloader::getUrls() const
     return this->urllist;
 }
 
-void Downloader::download(const QStringList& url, QString start_url, QString path)
+void Downloader::download(const QStringList& url, QString start_url, QString path, QString pg)
 {
-    QString dstPath = path+"/"+datalist["title"];
+    QString dstPath = path+"/"+datalist[pg]["title"];
 //    QNetworkAccessManager* manager = new QNetworkAccessManager;
     if(!QDir(dstPath).exists()){
         QDir().mkdir(dstPath);
@@ -313,14 +334,16 @@ void Downloader::download(const QStringList& url, QString start_url, QString pat
         });
         connect(this, &Downloader::dataReceived, dynamic_cast<MainWindow*>(parent), &MainWindow::updateProgressBar);
         connect(managers[i], &QNetworkAccessManager::finished, [=](QNetworkReply* reply){
-            QString dstfilepath = dstPath+"/."+datalist["title"]+QString::number(i)+".flv";
+            auto fname = ((allpages.length()==1||datalist[pg]["part"].isEmpty())?datalist[pg]["title"]:datalist[pg]["part"]);
+            qDebug() << allpages.length() << endl;
+            QString dstfilepath = dstPath+"/."+fname+QString::number(i)+".flv";
             QFile file(dstfilepath);
             file.open(QIODevice::WriteOnly);
             file.write(reply->readAll());
             file.close();
             qDebug() << "Downloaded!" + QString::number(i) << endl;
             dynamic_cast<MainWindow*>(parent)->numVideos--;
-            emit downloaded(dstPath, datalist["title"]);
+            emit downloaded(dstPath, fname);
             managers[i]->deleteLater();
         });
     }
@@ -391,7 +414,6 @@ void UrlReceiver::process(QString start_url, QString cid, QString quality)
 
 void MainWindow::on_pushButton_clicked()
 {
-//    QMap<QString, QString> map({{"16", "360P"},{"32", "480P"},{"64", "720P"}, {"80", "1080P"}});
     if(path.isEmpty()){
         QString dir = QFileDialog::getExistingDirectory(this, tr("Download to"), QDir::homePath());
         if(!dir.isEmpty()){
@@ -412,7 +434,8 @@ void MainWindow::on_pushButton_clicked()
         ui->pushButton->setEnabled(false);
         ui->pushButton->setText(tr("Downloading"));
         ui->lineEdit->setEnabled(false);
-        downloader->download(urllist[res], downloader->start_url, path);
+        ui->comboBox->setEnabled(false);
+        downloader->download(urllist[res], downloader->start_url, path, ui->comboBox->currentText());
         sc->deleteLater();
     });
     sc->addSource(lst);
@@ -423,6 +446,7 @@ void MainWindow::on_lineEdit_returnPressed()
 {
     ui->pushButton->setEnabled(false);
     ui->progressBar->setValue(0);
+    ui->comboBox->setEnabled(false);
     downloader->getMetaData(ui->lineEdit->text());
 //    qDebug() << ui->lineEdit->text() << endl;
 }
@@ -443,4 +467,17 @@ void MainWindow::on_actionPreferences_triggered()
 void MainWindow::updateProgressBar(qint64 received, qint64 total)
 {
     ui->progressBar->setValue(static_cast<int>(100*received/total));
+}
+
+void MainWindow::on_comboBox_currentTextChanged(const QString &arg1)
+{
+    ui->pushButton->setEnabled(false);
+    showData(alldata[arg1]);
+    downloader->getPlayLists(alldata[arg1]["cid"]);
+}
+
+void MainWindow::on_actionVA_Converter_triggered()
+{
+    VAConverter* vac = new VAConverter;
+    vac->exec();
 }
